@@ -1,4 +1,11 @@
-from plex_cleanup.filters import SearchFilters, aggregate, apply_filters, matches
+from plex_cleanup.filters import (
+    SearchFilters,
+    aggregate,
+    apply_aggregate_filters,
+    apply_filters,
+    matches,
+    matches_aggregate,
+)
 from plex_cleanup.models import resolution_ordinal
 
 from .conftest import make_episode, make_record
@@ -132,3 +139,65 @@ def test_aggregate_all_unknown_averages_are_none():
     assert agg.avg_size_bytes is None
     assert agg.avg_bitrate_kbps is None
     assert agg.total_size_bytes == 0
+
+
+def test_aggregate_season_level_unknown_season_groups_as_none():
+    records = [
+        make_episode(rating_key=1, season=None, file="/tv/a/e1.mkv"),
+        make_episode(rating_key=2, season=1, file="/tv/a/e2.mkv"),
+    ]
+    aggs = aggregate(records, "season")
+    assert sorted((a.season is None, a.season) for a in aggs) == [(False, 1), (True, None)]
+
+
+def _agg(**overrides):
+    records = [
+        make_episode(rating_key=1, file="/tv/a/e1.mkv", plays=0,
+                     size_bytes=2 * 1024**3, bitrate_kbps=4000),
+        make_episode(rating_key=2, file="/tv/a/e2.mkv", plays=3,
+                     size_bytes=4 * 1024**3, bitrate_kbps=6000),
+    ]
+    (agg,) = aggregate(records, "show")
+    for name, value in overrides.items():
+        setattr(agg, name, value)
+    return agg
+
+
+def test_aggregate_plays_every_episode_must_satisfy():
+    agg = _agg()  # plays 0 and 3
+    assert matches_aggregate(agg, SearchFilters())
+    # max_plays: the most-played episode (3) must be within the bound
+    assert matches_aggregate(agg, SearchFilters(max_plays=3))
+    assert not matches_aggregate(agg, SearchFilters(max_plays=2))
+    assert not matches_aggregate(agg, SearchFilters(max_plays=0))
+    # min_plays: the least-played episode (0) must be within the bound
+    assert matches_aggregate(agg, SearchFilters(min_plays=0))
+    assert not matches_aggregate(agg, SearchFilters(min_plays=1))
+
+
+def test_aggregate_size_and_bitrate_compare_average():
+    agg = _agg()  # avg size 3GB, avg bitrate 5000
+    assert matches_aggregate(
+        agg, SearchFilters(min_size=3 * 1024**3, max_size=3 * 1024**3)
+    )
+    assert not matches_aggregate(agg, SearchFilters(min_size=3 * 1024**3 + 1))
+    assert not matches_aggregate(agg, SearchFilters(max_size=3 * 1024**3 - 1))
+    assert matches_aggregate(agg, SearchFilters(min_bitrate=5000, max_bitrate=5000))
+    assert not matches_aggregate(agg, SearchFilters(min_bitrate=5001))
+    assert not matches_aggregate(agg, SearchFilters(max_bitrate=4999))
+
+
+def test_aggregate_unknown_average_excluded_when_filter_active():
+    agg = _agg(avg_size_bytes=None, avg_bitrate_kbps=None)
+    assert matches_aggregate(agg, SearchFilters())
+    assert not matches_aggregate(agg, SearchFilters(min_size=1))
+    assert not matches_aggregate(agg, SearchFilters(max_size=10**12))
+    assert not matches_aggregate(agg, SearchFilters(min_bitrate=1))
+    assert not matches_aggregate(agg, SearchFilters(max_bitrate=10**6))
+
+
+def test_apply_aggregate_filters():
+    watched = _agg(plays_min=5, plays_max=9)
+    unwatched = _agg(plays_min=0, plays_max=0)
+    result = apply_aggregate_filters([watched, unwatched], SearchFilters(max_plays=0))
+    assert result == [unwatched]

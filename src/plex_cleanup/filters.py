@@ -1,8 +1,9 @@
-"""Filtering of cached media records."""
+"""Filtering and aggregation of cached media records."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 from .models import AggregateRecord, MediaRecord, resolution_ordinal
 
@@ -66,19 +67,19 @@ def apply_filters(records: list[MediaRecord], filters: SearchFilters) -> list[Me
     return [r for r in records if matches(r, filters)]
 
 
-def aggregate(records: list[MediaRecord], level: str) -> list[AggregateRecord]:
+def aggregate(
+    records: list[MediaRecord], level: Literal["show", "season"]
+) -> list[AggregateRecord]:
     """Fold file records into per-show or per-season aggregates.
 
     Records without show info (movies, tracks, stale caches) are ignored.
     Averages are over files with a known value; None when no file has one.
     """
-    groups: dict[tuple, list[MediaRecord]] = {}
+    groups: dict[tuple[str, str, int | None], list[MediaRecord]] = {}
     for record in records:
         if record.show is None:
             continue
-        key = (record.library, record.show)
-        if level == "season":
-            key += (record.season,)
+        key = (record.library, record.show, record.season if level == "season" else None)
         groups.setdefault(key, []).append(record)
 
     aggregates = []
@@ -93,7 +94,7 @@ def aggregate(records: list[MediaRecord], level: str) -> list[AggregateRecord]:
             AggregateRecord(
                 library=key[0],
                 show=key[1],
-                season=key[2] if level == "season" else None,
+                season=key[2],
                 episodes=len(plays_by_episode),
                 files=len(group),
                 plays_min=min(plays_by_episode.values()),
@@ -104,3 +105,44 @@ def aggregate(records: list[MediaRecord], level: str) -> list[AggregateRecord]:
             )
         )
     return aggregates
+
+
+def matches_aggregate(agg: AggregateRecord, filters: SearchFilters) -> bool:
+    """True if the aggregate passes every active filter.
+
+    Plays: every episode must satisfy the range, i.e. the least-played
+    episode meets min_plays and the most-played meets max_plays.
+    Size/bitrate: compared against the group average; a group whose average
+    is unknown is excluded when a filter on that field is active.
+    Resolution filters are rejected at the CLI level and ignored here.
+    """
+    if filters.min_plays is not None and agg.plays_min < filters.min_plays:
+        return False
+    if filters.max_plays is not None and agg.plays_max > filters.max_plays:
+        return False
+
+    if filters.min_bitrate is not None and (
+        agg.avg_bitrate_kbps is None or agg.avg_bitrate_kbps < filters.min_bitrate
+    ):
+        return False
+    if filters.max_bitrate is not None and (
+        agg.avg_bitrate_kbps is None or agg.avg_bitrate_kbps > filters.max_bitrate
+    ):
+        return False
+
+    if filters.min_size is not None and (
+        agg.avg_size_bytes is None or agg.avg_size_bytes < filters.min_size
+    ):
+        return False
+    if filters.max_size is not None and (
+        agg.avg_size_bytes is None or agg.avg_size_bytes > filters.max_size
+    ):
+        return False
+
+    return True
+
+
+def apply_aggregate_filters(
+    aggregates: list[AggregateRecord], filters: SearchFilters
+) -> list[AggregateRecord]:
+    return [a for a in aggregates if matches_aggregate(a, filters)]
