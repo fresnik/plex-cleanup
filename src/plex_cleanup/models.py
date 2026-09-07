@@ -32,6 +32,10 @@ class MediaRecord:
     resolution: str | None
     plays: int
     added_at: str | None
+    # Structured show/season info for episodes; None for movies and tracks.
+    # Defaulted so records cached before these fields existed still load.
+    show: str | None = None
+    season: int | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)

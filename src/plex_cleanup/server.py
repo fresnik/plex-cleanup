@@ -45,6 +45,8 @@ def records_for_item(item, library: str) -> Iterator[MediaRecord]:
     plays = getattr(item, "viewCount", 0) or 0
     added_at = getattr(item, "addedAt", None)
     title = display_title(item)
+    show = getattr(item, "grandparentTitle", None) if item.type == "episode" else None
+    season = getattr(item, "parentIndex", None) if item.type == "episode" else None
     for media in item.media or []:
         for part in media.parts or []:
             if not part.file:
@@ -59,6 +61,8 @@ def records_for_item(item, library: str) -> Iterator[MediaRecord]:
                 resolution=getattr(media, "videoResolution", None),
                 plays=plays,
                 added_at=added_at.isoformat() if added_at else None,
+                show=show,
+                season=int(season) if season is not None else None,
             )
 
 
