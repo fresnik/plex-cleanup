@@ -7,6 +7,7 @@ import io
 import json
 from enum import Enum
 from pathlib import Path
+from typing import Literal
 
 from rich.console import Console
 from rich.table import Table
@@ -65,6 +66,19 @@ def _write(text: str, output: Path | None, console: Console) -> None:
         console.print(f"[dim]Wrote output to {output}[/dim]")
 
 
+def _print_table(table: Table, summary: str, output: Path | None, console: Console) -> None:
+    if output is None:
+        out_console = Console()
+        out_console.print(table)
+        out_console.print(f"[bold]{summary}[/bold]")
+    else:
+        file_console = Console(file=io.StringIO(), width=200)
+        file_console.print(table)
+        file_console.print(summary)
+        output.write_text(file_console.file.getvalue(), encoding="utf-8")
+        console.print(f"[dim]Wrote output to {output}[/dim]")
+
+
 def render_records(
     records: list[MediaRecord],
     fmt: OutputFormat,
@@ -93,16 +107,7 @@ def render_records(
         return
 
     table = _records_table(records, title=f"Matches ({len(records)})")
-    if output is None:
-        out_console = Console()
-        out_console.print(table)
-        out_console.print(f"[bold]{summary}[/bold]")
-    else:
-        file_console = Console(file=io.StringIO(), width=200)
-        file_console.print(table)
-        file_console.print(summary)
-        output.write_text(file_console.file.getvalue(), encoding="utf-8")
-        console.print(f"[dim]Wrote output to {output}[/dim]")
+    _print_table(table, summary, output, console)
 
 
 AGGREGATE_CSV_FIELDS = [
@@ -125,7 +130,9 @@ def _format_plays_range(agg: AggregateRecord) -> str:
     return f"{agg.plays_min}–{agg.plays_max}"
 
 
-def _aggregates_table(aggs: list[AggregateRecord], level: str, title: str) -> Table:
+def _aggregates_table(
+    aggs: list[AggregateRecord], level: Literal["show", "season"], title: str
+) -> Table:
     table = Table(title=title, show_lines=False)
     table.add_column("Library", style="cyan", no_wrap=True)
     table.add_column("Show", style="bold")
@@ -155,7 +162,7 @@ def _aggregates_table(aggs: list[AggregateRecord], level: str, title: str) -> Ta
 
 def render_aggregates(
     aggs: list[AggregateRecord],
-    level: str,
+    level: Literal["show", "season"],
     fmt: OutputFormat,
     output: Path | None,
     console: Console,
@@ -182,16 +189,7 @@ def render_aggregates(
         return
 
     table = _aggregates_table(aggs, level, title=f"Matches ({len(aggs)})")
-    if output is None:
-        out_console = Console()
-        out_console.print(table)
-        out_console.print(f"[bold]{summary}[/bold]")
-    else:
-        file_console = Console(file=io.StringIO(), width=200)
-        file_console.print(table)
-        file_console.print(summary)
-        output.write_text(file_console.file.getvalue(), encoding="utf-8")
-        console.print(f"[dim]Wrote output to {output}[/dim]")
+    _print_table(table, summary, output, console)
 
 
 def render_refresh_summary(
@@ -231,13 +229,4 @@ def render_refresh_summary(
     for r in changed:
         style = "green" if r["status"] == "updated" else "red"
         table.add_row(r["file"], f"[{style}]{r['status']}[/{style}]")
-    if output is None:
-        out_console = Console()
-        out_console.print(table)
-        out_console.print(f"[bold]{summary}[/bold]")
-    else:
-        file_console = Console(file=io.StringIO(), width=200)
-        file_console.print(table)
-        file_console.print(summary)
-        output.write_text(file_console.file.getvalue(), encoding="utf-8")
-        console.print(f"[dim]Wrote output to {output}[/dim]")
+    _print_table(table, summary, output, console)
