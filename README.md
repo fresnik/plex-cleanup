@@ -48,6 +48,25 @@ Filters (all optional): `--min-plays` / `--max-plays`, `--min-bitrate` /
 `--max-bitrate` (kbps), `--min-size` / `--max-size` (e.g. `500MB`, `1.5GB`),
 `--min-resolution` / `--max-resolution` (`sd`, `480`, `720`, `1080`, `4K`).
 
+Aggregate mode: `--group-by show` or `--group-by season` returns whole TV
+shows or seasons instead of files. Play filters must hold for **every**
+episode in the group (`--max-plays 0` = nothing in the show was watched);
+size and bitrate filters compare the **group average** (per file — a
+multi-part episode counts per part); resolution filters are not supported
+with `--group-by`. Results include episode/file counts, a plays range,
+average size/bitrate, and total size (the sort key). Non-TV libraries are
+skipped with a warning. Caches written before this option existed lack
+show/season info — run `refresh-metadata` once for TV libraries cached
+earlier.
+
+```sh
+# Completely unwatched shows, biggest first
+uv run plex-cleanup search -l TV --group-by show --max-plays 0
+
+# Seasons whose average episode file is over 3GB
+uv run plex-cleanup search -l TV --group-by season --min-size 3GB
+```
+
 Output: `--format tabular` (default), `json`, or `csv`; `--output FILE`
 writes to a file instead of stdout. Files with an unknown value for a field
 are excluded when a filter on that field is active.
