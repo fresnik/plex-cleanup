@@ -114,8 +114,11 @@ def matches_aggregate(agg: AggregateRecord, filters: SearchFilters) -> bool:
     episode meets min_plays and the most-played meets max_plays.
     Size/bitrate: compared against the group average; a group whose average
     is unknown is excluded when a filter on that field is active.
-    Resolution filters are rejected at the CLI level and ignored here.
+    Resolution filters are not supported for aggregates and raise ValueError.
     """
+    if filters.min_resolution is not None or filters.max_resolution is not None:
+        raise ValueError("resolution filters are not supported for aggregates")
+
     if filters.min_plays is not None and agg.plays_min < filters.min_plays:
         return False
     if filters.max_plays is not None and agg.plays_max > filters.max_plays:

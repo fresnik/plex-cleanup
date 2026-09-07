@@ -295,6 +295,23 @@ def test_group_by_with_no_groupable_records_errors(tmp_path):
     assert "refresh-metadata" in result.output
 
 
+def test_group_by_warns_about_partially_stale_library(tmp_path):
+    cache_path = seed_tv_cache(tmp_path)
+    cache = Cache.load(cache_path)
+    stale = make_record(library="TV", rating_key=13, file="/tv/stale/e1.mkv")
+    cache.set_records("TV", cache.get_records("TV") + [stale])
+    cache.save()
+    result = runner.invoke(
+        app,
+        ["search", "-l", "TV", "--group-by", "show", "--format", "json",
+         "--cache-file", str(cache_path)],
+    )
+    assert result.exit_code == 0, result.output
+    assert "1 record(s) in 'TV' lack show/season info" in result.output
+    payload = json.loads(result.stdout)
+    assert {r["show"] for r in payload["results"]} == {"Unwatched Show", "Watched Show"}
+
+
 def test_search_without_group_by_unchanged(tmp_path):
     cache_path = seed_tv_cache(tmp_path)
     result = runner.invoke(

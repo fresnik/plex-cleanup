@@ -162,7 +162,7 @@ def search(
     Libraries not yet in the local cache are scanned from the Plex server
     first; subsequent searches run entirely from the cache.
     """
-    if group_by is not None and (min_resolution or max_resolution):
+    if group_by is not None and (min_resolution is not None or max_resolution is not None):
         raise typer.BadParameter(
             "--min-resolution/--max-resolution cannot be combined with --group-by; "
             "resolution does not aggregate meaningfully."
@@ -243,6 +243,14 @@ def search(
                 "records (not a TV library, or the cache predates grouping — "
                 "run 'plex-cleanup refresh-metadata').[/yellow]"
             )
+        for name in sorted(libraries_groupable):
+            missing = sum(1 for r in records if r.library == name and r.show is None)
+            if missing:
+                err_console.print(
+                    f"[yellow]{missing} record(s) in {name!r} lack show/season "
+                    "info and were excluded — run 'plex-cleanup "
+                    "refresh-metadata' to update them.[/yellow]"
+                )
         groupable = [r for r in records if r.show is not None]
         if not groupable:
             err_console.print(

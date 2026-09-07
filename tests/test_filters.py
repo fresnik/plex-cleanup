@@ -1,3 +1,5 @@
+import pytest
+
 from plex_cleanup.filters import (
     SearchFilters,
     aggregate,
@@ -201,3 +203,11 @@ def test_apply_aggregate_filters():
     unwatched = _agg(plays_min=0, plays_max=0)
     result = apply_aggregate_filters([watched, unwatched], SearchFilters(max_plays=0))
     assert result == [unwatched]
+
+
+def test_aggregate_resolution_filters_raise():
+    agg = _agg()
+    with pytest.raises(ValueError, match="resolution"):
+        matches_aggregate(agg, SearchFilters(min_resolution="1080"))
+    with pytest.raises(ValueError, match="resolution"):
+        matches_aggregate(agg, SearchFilters(max_resolution="720"))
