@@ -1,7 +1,7 @@
-from plex_cleanup.filters import SearchFilters, apply_filters, matches
+from plex_cleanup.filters import SearchFilters, aggregate, apply_filters, matches
 from plex_cleanup.models import resolution_ordinal
 
-from .conftest import make_record
+from .conftest import make_episode, make_record
 
 
 def test_no_filters_matches_everything():
@@ -65,3 +65,70 @@ def test_resolution_range():
 def test_apply_filters():
     records = [make_record(plays=0), make_record(plays=5)]
     assert len(apply_filters(records, SearchFilters(max_plays=0))) == 1
+
+
+def test_aggregate_by_show_groups_across_seasons():
+    records = [
+        make_episode(rating_key=1, season=1, file="/tv/a/s01e01.mkv", plays=0),
+        make_episode(rating_key=2, season=2, file="/tv/a/s02e01.mkv", plays=3),
+        make_episode(rating_key=3, show="Other Show", file="/tv/b/s01e01.mkv"),
+    ]
+    aggs = aggregate(records, "show")
+    assert {a.show for a in aggs} == {"Example Show", "Other Show"}
+    example = next(a for a in aggs if a.show == "Example Show")
+    assert example.season is None
+    assert example.episodes == 2
+    assert example.plays_min == 0
+    assert example.plays_max == 3
+
+
+def test_aggregate_by_season_splits_seasons():
+    records = [
+        make_episode(rating_key=1, season=1, file="/tv/a/s01e01.mkv"),
+        make_episode(rating_key=2, season=2, file="/tv/a/s02e01.mkv"),
+    ]
+    aggs = aggregate(records, "season")
+    assert sorted(a.season for a in aggs) == [1, 2]
+    assert all(a.show == "Example Show" and a.episodes == 1 for a in aggs)
+
+
+def test_aggregate_skips_records_without_show():
+    records = [make_record(), make_episode(rating_key=1)]
+    aggs = aggregate(records, "show")
+    assert len(aggs) == 1
+
+
+def test_aggregate_multi_file_episode_counted_once():
+    records = [
+        make_episode(rating_key=1, file="/tv/a/e1-part1.mkv", plays=2,
+                     size_bytes=1024**3),
+        make_episode(rating_key=1, file="/tv/a/e1-part2.mkv", plays=2,
+                     size_bytes=3 * 1024**3),
+    ]
+    (agg,) = aggregate(records, "show")
+    assert agg.episodes == 1
+    assert agg.files == 2
+    assert agg.plays_min == agg.plays_max == 2
+    assert agg.total_size_bytes == 4 * 1024**3
+    assert agg.avg_size_bytes == 2 * 1024**3
+
+
+def test_aggregate_averages_ignore_unknown_values():
+    records = [
+        make_episode(rating_key=1, file="/tv/a/e1.mkv", size_bytes=2 * 1024**3,
+                     bitrate_kbps=4000),
+        make_episode(rating_key=2, file="/tv/a/e2.mkv", size_bytes=None,
+                     bitrate_kbps=None),
+    ]
+    (agg,) = aggregate(records, "show")
+    assert agg.avg_size_bytes == 2 * 1024**3
+    assert agg.avg_bitrate_kbps == 4000
+    assert agg.total_size_bytes == 2 * 1024**3
+
+
+def test_aggregate_all_unknown_averages_are_none():
+    records = [make_episode(rating_key=1, size_bytes=None, bitrate_kbps=None)]
+    (agg,) = aggregate(records, "show")
+    assert agg.avg_size_bytes is None
+    assert agg.avg_bitrate_kbps is None
+    assert agg.total_size_bytes == 0

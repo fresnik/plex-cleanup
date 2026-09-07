@@ -44,3 +44,22 @@ class MediaRecord:
     def from_dict(cls, data: dict) -> "MediaRecord":
         names = {f.name for f in fields(cls)}
         return cls(**{k: v for k, v in data.items() if k in names})
+
+
+@dataclass
+class AggregateRecord:
+    """Aggregated metadata for a whole TV show or one season of it."""
+
+    library: str
+    show: str
+    season: int | None  # set at season level, None at show level
+    episodes: int  # distinct Plex items (rating keys)
+    files: int  # media file records
+    plays_min: int
+    plays_max: int
+    avg_bitrate_kbps: int | None
+    avg_size_bytes: int | None
+    total_size_bytes: int
+
+    def to_dict(self) -> dict:
+        return asdict(self)

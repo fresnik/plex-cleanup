@@ -54,6 +54,13 @@ def test_movie_records_have_no_show_or_season():
     assert record.season is None
 
 
+def test_string_parent_index_coerced_to_int():
+    item = FakeEpisode(12, "Example Show", 3, "Pilot", "/tv/show/s03e01.mkv")
+    item.parentIndex = "3"
+    (record,) = list(records_for_item(item, "TV"))
+    assert record.season == 3
+
+
 def test_old_cache_dict_without_new_fields_loads_with_none():
     data = dict(
         library="TV", title="T", rating_key=1, file="/f.mkv",

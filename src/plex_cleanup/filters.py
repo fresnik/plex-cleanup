@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .models import MediaRecord, resolution_ordinal
+from .models import AggregateRecord, MediaRecord, resolution_ordinal
 
 
 @dataclass
@@ -64,3 +64,43 @@ def matches(record: MediaRecord, filters: SearchFilters) -> bool:
 
 def apply_filters(records: list[MediaRecord], filters: SearchFilters) -> list[MediaRecord]:
     return [r for r in records if matches(r, filters)]
+
+
+def aggregate(records: list[MediaRecord], level: str) -> list[AggregateRecord]:
+    """Fold file records into per-show or per-season aggregates.
+
+    Records without show info (movies, tracks, stale caches) are ignored.
+    Averages are over files with a known value; None when no file has one.
+    """
+    groups: dict[tuple, list[MediaRecord]] = {}
+    for record in records:
+        if record.show is None:
+            continue
+        key = (record.library, record.show)
+        if level == "season":
+            key += (record.season,)
+        groups.setdefault(key, []).append(record)
+
+    aggregates = []
+    for key, group in groups.items():
+        # Plays are per episode, not per file: a multi-part episode counts once.
+        plays_by_episode: dict[int, int] = {}
+        for record in group:
+            plays_by_episode[record.rating_key] = record.plays or 0
+        sizes = [r.size_bytes for r in group if r.size_bytes is not None]
+        bitrates = [r.bitrate_kbps for r in group if r.bitrate_kbps is not None]
+        aggregates.append(
+            AggregateRecord(
+                library=key[0],
+                show=key[1],
+                season=key[2] if level == "season" else None,
+                episodes=len(plays_by_episode),
+                files=len(group),
+                plays_min=min(plays_by_episode.values()),
+                plays_max=max(plays_by_episode.values()),
+                avg_bitrate_kbps=round(sum(bitrates) / len(bitrates)) if bitrates else None,
+                avg_size_bytes=round(sum(sizes) / len(sizes)) if sizes else None,
+                total_size_bytes=sum(sizes),
+            )
+        )
+    return aggregates

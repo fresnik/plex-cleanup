@@ -22,3 +22,16 @@ def make_record(**overrides) -> MediaRecord:
 @pytest.fixture
 def record_factory():
     return make_record
+
+
+def make_episode(**overrides) -> MediaRecord:
+    defaults = dict(
+        library="TV",
+        title="Example Show - S01E01 - Pilot",
+        rating_key=201,
+        file="/media/tv/example/s01e01.mkv",
+        show="Example Show",
+        season=1,
+    )
+    defaults.update(overrides)
+    return make_record(**defaults)
