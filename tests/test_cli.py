@@ -7,7 +7,7 @@ from typer.testing import CliRunner
 from plex_cleanup.cache import Cache
 from plex_cleanup.cli import app
 
-from .conftest import make_record
+from .conftest import make_episode, make_record
 
 runner = CliRunner()
 
@@ -204,3 +204,104 @@ def test_refresh_empty_cache_errors(tmp_path):
     )
     assert result.exit_code == 1
     assert "Cache is empty" in result.output
+
+
+def seed_tv_cache(tmp_path):
+    path = tmp_path / "cache.json"
+    cache = Cache(path)
+    cache.set_records(
+        "TV",
+        [
+            make_episode(rating_key=10, show="Unwatched Show", season=1,
+                         file="/tv/u/s01e01.mkv", plays=0, size_bytes=2 * 1024**3),
+            make_episode(rating_key=11, show="Unwatched Show", season=2,
+                         file="/tv/u/s02e01.mkv", plays=0, size_bytes=4 * 1024**3),
+            make_episode(rating_key=12, show="Watched Show", season=1,
+                         file="/tv/w/s01e01.mkv", plays=5, size_bytes=1024**3),
+        ],
+    )
+    cache.save()
+    return path
+
+
+def test_group_by_show_json(tmp_path):
+    cache_path = seed_tv_cache(tmp_path)
+    result = runner.invoke(
+        app,
+        ["search", "-l", "TV", "--group-by", "show", "--max-plays", "0",
+         "--format", "json", "--cache-file", str(cache_path)],
+    )
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert payload["summary"]["count"] == 1
+    (row,) = payload["results"]
+    assert row["show"] == "Unwatched Show"
+    assert row["episodes"] == 2
+    assert row["total_size_bytes"] == 6 * 1024**3
+    assert row["avg_size_bytes"] == 3 * 1024**3
+
+
+def test_group_by_season_json(tmp_path):
+    cache_path = seed_tv_cache(tmp_path)
+    result = runner.invoke(
+        app,
+        ["search", "-l", "TV", "--group-by", "season", "--format", "json",
+         "--cache-file", str(cache_path)],
+    )
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert payload["summary"]["count"] == 3
+    # sorted by total size descending
+    assert [r["total_size_bytes"] for r in payload["results"]] == [
+        4 * 1024**3, 2 * 1024**3, 1024**3,
+    ]
+
+
+def test_group_by_rejects_resolution_filters(tmp_path):
+    cache_path = seed_tv_cache(tmp_path)
+    result = runner.invoke(
+        app,
+        ["search", "-l", "TV", "--group-by", "show", "--min-resolution", "1080",
+         "--cache-file", str(cache_path)],
+    )
+    assert result.exit_code != 0
+    assert "resolution" in result.output.lower()
+
+
+def test_group_by_skips_non_tv_library_with_warning(tmp_path):
+    cache_path = seed_tv_cache(tmp_path)
+    cache = Cache.load(cache_path)
+    cache.set_records("Movies", [make_record(rating_key=1, file="/m/movie.mkv")])
+    cache.save()
+    result = runner.invoke(
+        app,
+        ["search", "-l", "TV", "-l", "Movies", "--group-by", "show",
+         "--format", "json", "--cache-file", str(cache_path)],
+    )
+    assert result.exit_code == 0, result.output
+    assert "Skipping 'Movies'" in result.output
+    payload = json.loads(result.stdout)
+    assert {r["show"] for r in payload["results"]} == {"Unwatched Show", "Watched Show"}
+
+
+def test_group_by_with_no_groupable_records_errors(tmp_path):
+    cache_path = seed_cache(tmp_path)  # movies only
+    result = runner.invoke(
+        app,
+        ["search", "-l", "Movies", "--group-by", "show",
+         "--cache-file", str(cache_path)],
+    )
+    assert result.exit_code == 1
+    assert "refresh-metadata" in result.output
+
+
+def test_search_without_group_by_unchanged(tmp_path):
+    cache_path = seed_tv_cache(tmp_path)
+    result = runner.invoke(
+        app,
+        ["search", "-l", "TV", "--format", "json", "--cache-file", str(cache_path)],
+    )
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert payload["summary"]["count"] == 3
+    assert all("file" in r for r in payload["results"])

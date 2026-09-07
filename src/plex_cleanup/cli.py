@@ -20,8 +20,13 @@ from rich.progress import (
 
 from . import server as plex
 from .cache import Cache, default_cache_path
-from .filters import SearchFilters, apply_filters
-from .output import OutputFormat, render_records, render_refresh_summary
+from .filters import SearchFilters, aggregate, apply_aggregate_filters, apply_filters
+from .output import (
+    OutputFormat,
+    render_aggregates,
+    render_records,
+    render_refresh_summary,
+)
 from .units import parse_size
 
 # Populate PLEX_URL/PLEX_TOKEN/PLEX_CLEANUP_CACHE from a .env file before
@@ -44,6 +49,11 @@ class Resolution(str, Enum):
     p720 = "720"
     p1080 = "1080"
     uhd = "4K"
+
+
+class GroupBy(str, Enum):
+    show = "show"
+    season = "season"
 
 
 def _parse_size_option(value: Optional[str]) -> Optional[int]:
@@ -133,6 +143,14 @@ def search(
     max_resolution: Optional[Resolution] = typer.Option(
         None, case_sensitive=False, help="Maximum resolution."
     ),
+    group_by: Optional[GroupBy] = typer.Option(
+        None,
+        "--group-by",
+        case_sensitive=False,
+        help="Aggregate results per TV show or per season. "
+        "Size/bitrate filters compare the group average; play filters must "
+        "hold for every episode. Resolution filters are not supported.",
+    ),
     format: OutputFormat = FORMAT_OPTION,
     output: Optional[Path] = OUTPUT_OPTION,
     url: Optional[str] = URL_OPTION,
@@ -144,6 +162,12 @@ def search(
     Libraries not yet in the local cache are scanned from the Plex server
     first; subsequent searches run entirely from the cache.
     """
+    if group_by is not None and (min_resolution or max_resolution):
+        raise typer.BadParameter(
+            "--min-resolution/--max-resolution cannot be combined with --group-by; "
+            "resolution does not aggregate meaningfully."
+        )
+
     cache = Cache.load(cache_file or default_cache_path())
     server = None
 
@@ -207,6 +231,32 @@ def search(
         min_resolution=min_resolution.value if min_resolution else None,
         max_resolution=max_resolution.value if max_resolution else None,
     )
+    if group_by is not None:
+        # Only records with structured show info can be grouped. A library
+        # with none is either not a TV library or was cached before the
+        # show/season fields existed.
+        libraries_seen = {r.library for r in records}
+        libraries_groupable = {r.library for r in records if r.show is not None}
+        for name in sorted(libraries_seen - libraries_groupable):
+            err_console.print(
+                f"[yellow]Skipping {name!r}: no show/season info in cached "
+                "records (not a TV library, or the cache predates grouping — "
+                "run 'plex-cleanup refresh-metadata').[/yellow]"
+            )
+        groupable = [r for r in records if r.show is not None]
+        if not groupable:
+            err_console.print(
+                "[red]Error:[/red] no records with show/season info in the "
+                "selected libraries. --group-by needs TV libraries; if these "
+                "are TV libraries, update the cache with "
+                "'plex-cleanup refresh-metadata'."
+            )
+            raise typer.Exit(code=1)
+        aggs = apply_aggregate_filters(aggregate(groupable, group_by.value), filters)
+        aggs.sort(key=lambda a: a.total_size_bytes, reverse=True)
+        render_aggregates(aggs, group_by.value, format, output, err_console)
+        return
+
     matched = apply_filters(records, filters)
     matched.sort(key=lambda r: r.size_bytes or 0, reverse=True)
     render_records(matched, format, output, err_console, summary_verb="found")
