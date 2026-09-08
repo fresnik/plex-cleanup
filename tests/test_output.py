@@ -17,6 +17,7 @@ def make_aggregate(**overrides) -> AggregateRecord:
         files=10,
         plays_min=0,
         plays_max=0,
+        plays_total=0,
         avg_bitrate_kbps=5000,
         avg_size_bytes=2 * 1024**3,
         total_size_bytes=20 * 1024**3,
@@ -40,22 +41,23 @@ def test_render_aggregates_json(tmp_path):
 
 
 def test_render_aggregates_csv(tmp_path):
-    agg = make_aggregate(season=2, plays_max=3)
+    agg = make_aggregate(season=2, plays_max=3, plays_total=7)
     text = render_to_file([agg], "season", OutputFormat.csv, tmp_path)
     (row,) = list(csv.DictReader(io.StringIO(text)))
     assert row["show"] == "Example Show"
     assert row["season"] == "2"
     assert row["plays_min"] == "0"
     assert row["plays_max"] == "3"
+    assert row["plays_total"] == "7"
     assert row["total_size_bytes"] == str(20 * 1024**3)
 
 
-def test_render_aggregates_tabular_plays_range(tmp_path):
-    uniform = make_aggregate()
-    mixed = make_aggregate(show="Mixed Show", plays_min=1, plays_max=4)
-    text = render_to_file([uniform, mixed], "show", OutputFormat.tabular, tmp_path)
-    assert "1–4" in text  # range rendered with an en dash
-    assert "2 show(s) found" in text
+def test_render_aggregates_tabular_total_plays(tmp_path):
+    agg = make_aggregate(plays_min=1, plays_max=4, plays_total=23)
+    text = render_to_file([agg], "show", OutputFormat.tabular, tmp_path)
+    assert "23" in text
+    assert "1–4" not in text  # the min–max range column is gone
+    assert "1 show(s) found" in text
 
 
 def test_render_aggregates_tabular_season_column_and_noun(tmp_path):

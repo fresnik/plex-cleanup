@@ -89,6 +89,7 @@ def test_aggregate_by_show_groups_across_seasons():
     assert example.episodes == 2
     assert example.plays_min == 0
     assert example.plays_max == 3
+    assert example.plays_total == 3
 
 
 def test_aggregate_by_season_splits_seasons():
@@ -118,6 +119,7 @@ def test_aggregate_multi_file_episode_counted_once():
     assert agg.episodes == 1
     assert agg.files == 2
     assert agg.plays_min == agg.plays_max == 2
+    assert agg.plays_total == 2  # per episode, not per file
     assert agg.total_size_bytes == 4 * 1024**3
     assert agg.avg_size_bytes == 2 * 1024**3
 
@@ -165,16 +167,19 @@ def _agg(**overrides):
     return agg
 
 
-def test_aggregate_plays_every_episode_must_satisfy():
-    agg = _agg()  # plays 0 and 3
+def test_aggregate_plays_filter_compares_total():
+    agg = _agg()  # plays 0 and 3 → total 3
     assert matches_aggregate(agg, SearchFilters())
-    # max_plays: the most-played episode (3) must be within the bound
     assert matches_aggregate(agg, SearchFilters(max_plays=3))
     assert not matches_aggregate(agg, SearchFilters(max_plays=2))
     assert not matches_aggregate(agg, SearchFilters(max_plays=0))
-    # min_plays: the least-played episode (0) must be within the bound
-    assert matches_aggregate(agg, SearchFilters(min_plays=0))
-    assert not matches_aggregate(agg, SearchFilters(min_plays=1))
+    assert matches_aggregate(agg, SearchFilters(min_plays=3))
+    # total (3) meets the bound even though the least-played episode (0) doesn't
+    assert matches_aggregate(agg, SearchFilters(min_plays=1))
+    assert not matches_aggregate(agg, SearchFilters(min_plays=4))
+    # total (2) exceeds the bound even though no single episode (1, 1) does
+    once_each = _agg(plays_min=1, plays_max=1, plays_total=2)
+    assert not matches_aggregate(once_each, SearchFilters(max_plays=1))
 
 
 def test_aggregate_size_and_bitrate_compare_average():
@@ -199,8 +204,8 @@ def test_aggregate_unknown_average_excluded_when_filter_active():
 
 
 def test_apply_aggregate_filters():
-    watched = _agg(plays_min=5, plays_max=9)
-    unwatched = _agg(plays_min=0, plays_max=0)
+    watched = _agg(plays_min=5, plays_max=9, plays_total=14)
+    unwatched = _agg(plays_min=0, plays_max=0, plays_total=0)
     result = apply_aggregate_filters([watched, unwatched], SearchFilters(max_plays=0))
     assert result == [unwatched]
 

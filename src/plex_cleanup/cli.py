@@ -167,8 +167,8 @@ def search(
         "--group-by",
         case_sensitive=False,
         help="Aggregate results per TV show or per season. "
-        "Size/bitrate filters compare the group average; play filters must "
-        "hold for every episode. Resolution filters are not supported.",
+        "Size/bitrate filters compare the group average; play filters compare "
+        "the group's total plays. Resolution filters are not supported.",
     ),
     show: Optional[str] = typer.Option(
         None,

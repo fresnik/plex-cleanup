@@ -104,6 +104,7 @@ def aggregate(
                 files=len(group),
                 plays_min=min(plays_by_episode.values()),
                 plays_max=max(plays_by_episode.values()),
+                plays_total=sum(plays_by_episode.values()),
                 avg_bitrate_kbps=round(sum(bitrates) / len(bitrates)) if bitrates else None,
                 avg_size_bytes=round(sum(sizes) / len(sizes)) if sizes else None,
                 total_size_bytes=sum(sizes),
@@ -115,8 +116,8 @@ def aggregate(
 def matches_aggregate(agg: AggregateRecord, filters: SearchFilters) -> bool:
     """True if the aggregate passes every active filter.
 
-    Plays: every episode must satisfy the range, i.e. the least-played
-    episode meets min_plays and the most-played meets max_plays.
+    Plays: compared against the group's total plays summed across episodes
+    (max_plays=0 still means nothing in the group was watched).
     Size/bitrate: compared against the group average; a group whose average
     is unknown is excluded when a filter on that field is active.
     Show: matched case-insensitively against the aggregate's show name.
@@ -128,9 +129,9 @@ def matches_aggregate(agg: AggregateRecord, filters: SearchFilters) -> bool:
     if filters.show is not None and agg.show.lower() != filters.show.lower():
         return False
 
-    if filters.min_plays is not None and agg.plays_min < filters.min_plays:
+    if filters.min_plays is not None and agg.plays_total < filters.min_plays:
         return False
-    if filters.max_plays is not None and agg.plays_max > filters.max_plays:
+    if filters.max_plays is not None and agg.plays_total > filters.max_plays:
         return False
 
     if filters.min_bitrate is not None and (

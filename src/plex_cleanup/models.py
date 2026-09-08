@@ -59,6 +59,7 @@ class AggregateRecord:
     files: int  # media file records
     plays_min: int
     plays_max: int
+    plays_total: int
     avg_bitrate_kbps: int | None
     avg_size_bytes: int | None
     total_size_bytes: int

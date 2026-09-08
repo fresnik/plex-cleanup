@@ -118,16 +118,11 @@ AGGREGATE_CSV_FIELDS = [
     "files",
     "plays_min",
     "plays_max",
+    "plays_total",
     "avg_bitrate_kbps",
     "avg_size_bytes",
     "total_size_bytes",
 ]
-
-
-def _format_plays_range(agg: AggregateRecord) -> str:
-    if agg.plays_min == agg.plays_max:
-        return str(agg.plays_min)
-    return f"{agg.plays_min}–{agg.plays_max}"
 
 
 def _aggregates_table(
@@ -139,7 +134,7 @@ def _aggregates_table(
     if level == "season":
         table.add_column("Season", justify="right")
     table.add_column("Episodes", justify="right")
-    table.add_column("Plays", justify="right", style="green")
+    table.add_column("Total Plays", justify="right", style="green")
     table.add_column("Avg Bitrate", justify="right")
     table.add_column("Avg Size", justify="right")
     table.add_column("Total Size", justify="right", style="magenta")
@@ -150,7 +145,7 @@ def _aggregates_table(
         row.extend(
             [
                 str(a.episodes),
-                _format_plays_range(a),
+                str(a.plays_total),
                 format_bitrate(a.avg_bitrate_kbps),
                 format_size(a.avg_size_bytes),
                 format_size(a.total_size_bytes),

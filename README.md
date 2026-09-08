@@ -60,14 +60,16 @@ them. Caches written before this existed undercount plays — run
 `refresh-metadata` once to update them.
 
 Aggregate mode: `--group-by show` or `--group-by season` returns whole TV
-shows or seasons instead of files. Play filters must hold for **every**
-episode in the group (`--max-plays 0` = nothing in the show was watched);
-size and bitrate filters compare the **group average** (per file — a
-multi-part episode counts per part); resolution filters are not supported
-with `--group-by`. With `--group-by season`, `--show NAME` narrows the
-results to the seasons of one show (case-insensitive exact name match).
-Results include episode/file counts, a plays range,
-average size/bitrate, and total size (the sort key). Non-TV libraries are
+shows or seasons instead of files. Play filters compare the group's
+**total plays**, summed per episode (`--max-plays 0` still means nothing
+in the show was watched); size and bitrate filters compare the **group
+average** (per file — a multi-part episode counts per part); resolution
+filters are not supported with `--group-by`. With `--group-by season`,
+`--show NAME` narrows the results to the seasons of one show
+(case-insensitive exact name match). Results include episode/file counts,
+total plays (the JSON/CSV output also carries the informational
+per-episode `plays_min`/`plays_max`), average size/bitrate, and total
+size (the sort key). Non-TV libraries are
 skipped with a warning. Caches written before this option existed lack
 show/season info — run `refresh-metadata` once for TV libraries cached
 earlier.
