@@ -205,6 +205,18 @@ def test_apply_aggregate_filters():
     assert result == [unwatched]
 
 
+def test_aggregate_show_filter_matches_case_insensitively():
+    agg = _agg()  # show "Example Show"
+    assert matches_aggregate(agg, SearchFilters(show="Example Show"))
+    assert matches_aggregate(agg, SearchFilters(show="example show"))
+    assert not matches_aggregate(agg, SearchFilters(show="Other Show"))
+
+
+def test_show_filter_raises_for_file_records():
+    with pytest.raises(ValueError, match="show"):
+        matches(make_record(), SearchFilters(show="Example Show"))
+
+
 def test_aggregate_resolution_filters_raise():
     agg = _agg()
     with pytest.raises(ValueError, match="resolution"):

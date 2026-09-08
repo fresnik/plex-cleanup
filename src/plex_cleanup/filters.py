@@ -18,6 +18,7 @@ class SearchFilters:
     max_size: int | None = None
     min_resolution: str | None = None
     max_resolution: str | None = None
+    show: str | None = None
 
 
 def matches(record: MediaRecord, filters: SearchFilters) -> bool:
@@ -25,7 +26,11 @@ def matches(record: MediaRecord, filters: SearchFilters) -> bool:
 
     A record with an unknown value (None) is excluded when a filter on that
     field is active, since the constraint cannot be verified.
+    The show filter is not supported for file records and raises ValueError.
     """
+    if filters.show is not None:
+        raise ValueError("the show filter is not supported for file records")
+
     plays = record.plays or 0
     if filters.min_plays is not None and plays < filters.min_plays:
         return False
@@ -114,10 +119,14 @@ def matches_aggregate(agg: AggregateRecord, filters: SearchFilters) -> bool:
     episode meets min_plays and the most-played meets max_plays.
     Size/bitrate: compared against the group average; a group whose average
     is unknown is excluded when a filter on that field is active.
+    Show: matched case-insensitively against the aggregate's show name.
     Resolution filters are not supported for aggregates and raise ValueError.
     """
     if filters.min_resolution is not None or filters.max_resolution is not None:
         raise ValueError("resolution filters are not supported for aggregates")
+
+    if filters.show is not None and agg.show.lower() != filters.show.lower():
+        return False
 
     if filters.min_plays is not None and agg.plays_min < filters.min_plays:
         return False

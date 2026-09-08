@@ -118,9 +118,43 @@ class FakeItem:
         self.media = media
 
 
+class FakeHistoryEntry:
+    def __init__(self, rating_key, account_id, type=None, title=None):
+        self.ratingKey = rating_key
+        self.accountID = account_id
+        if type is not None:
+            self.type = type
+        if title is not None:
+            self.title = title
+
+
+class FakeSection:
+    type = "movie"
+
+    def __init__(self, title, items):
+        self.title = title
+        self._items = items
+
+    def all(self):
+        return self._items
+
+
+class FakeLibrary:
+    def __init__(self, sections):
+        self._sections = {s.title: s for s in sections}
+
+    def section(self, name):
+        return self._sections[name]
+
+    def sections(self):
+        return list(self._sections.values())
+
+
 class FakeServer:
-    def __init__(self, items):
+    def __init__(self, items, history_entries=(), sections=()):
         self._items = {item.ratingKey: item for item in items}
+        self._history = list(history_entries)
+        self.library = FakeLibrary(sections)
 
     def fetchItem(self, rating_key):
         from plexapi.exceptions import NotFound
@@ -128,6 +162,91 @@ class FakeServer:
         if rating_key not in self._items:
             raise NotFound(str(rating_key))
         return self._items[rating_key]
+
+    def history(self, maxresults=None):
+        return self._history
+
+
+def make_fake_movie(rating_key, title, file, plays=0):
+    base = make_record()
+    return FakeItem(rating_key, title, plays=plays, media=[FakeMedia(
+        base.bitrate_kbps, base.resolution, [FakePart(file, base.size_bytes)])])
+
+
+def test_search_scan_merges_all_account_history(tmp_path, monkeypatch):
+    cache_path = tmp_path / "cache.json"
+    section = FakeSection("Movies", [
+        make_fake_movie(1, "Watched Elsewhere", "/m/elsewhere.mkv"),
+        make_fake_movie(2, "Truly Unwatched", "/m/unwatched.mkv"),
+    ])
+    server = FakeServer(
+        [],
+        history_entries=[FakeHistoryEntry(1, account_id=42),
+                         FakeHistoryEntry(1, account_id=43)],
+        sections=[section],
+    )
+    monkeypatch.setattr("plex_cleanup.cli._connect", lambda url, token: server)
+
+    result = runner.invoke(
+        app,
+        ["search", "-l", "Movies", "--max-plays", "0", "--format", "json",
+         "--cache-file", str(cache_path)],
+    )
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert [r["file"] for r in payload["results"]] == ["/m/unwatched.mkv"]
+    # the merged count is what gets cached
+    cached = {r.file: r.plays for r in Cache.load(cache_path).get_records("Movies")}
+    assert cached == {"/m/elsewhere.mkv": 2, "/m/unwatched.mkv": 0}
+
+
+def test_search_scan_history_failure_warns_and_continues(tmp_path, monkeypatch):
+    cache_path = tmp_path / "cache.json"
+    section = FakeSection("Movies", [make_fake_movie(1, "Movie", "/m/movie.mkv", plays=1)])
+    server = FakeServer([], sections=[section])
+
+    def broken_history(maxresults=None):
+        raise RuntimeError("boom")
+
+    server.history = broken_history
+    monkeypatch.setattr("plex_cleanup.cli._connect", lambda url, token: server)
+
+    result = runner.invoke(
+        app,
+        ["search", "-l", "Movies", "--format", "json", "--cache-file", str(cache_path)],
+    )
+    assert result.exit_code == 0, result.output
+    assert "watch history" in result.output
+    payload = json.loads(result.stdout)
+    assert payload["summary"]["count"] == 1
+
+
+def test_refresh_merges_all_account_history(tmp_path, monkeypatch):
+    cache_path = tmp_path / "cache.json"
+    cache = Cache(cache_path)
+    cache.set_records(
+        "Movies",
+        [make_record(rating_key=1, title="Watched Elsewhere", file="/m/elsewhere.mkv",
+                     plays=0, added_at=None)],
+    )
+    cache.save()
+    server = FakeServer(
+        [make_fake_movie(1, "Watched Elsewhere", "/m/elsewhere.mkv")],
+        # ratingKey points elsewhere (delete/re-add relink); the stored title
+        # still identifies the movie and must carry the play.
+        history_entries=[FakeHistoryEntry(999, account_id=42, type="movie",
+                                          title="Watched Elsewhere")],
+    )
+    monkeypatch.setattr("plex_cleanup.cli._connect", lambda url, token: server)
+
+    result = runner.invoke(
+        app, ["refresh-metadata", "--format", "json", "--cache-file", str(cache_path)]
+    )
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert payload["summary"]["updated"] == 1
+    refreshed = Cache.load(cache_path).get_records("Movies")
+    assert refreshed[0].plays == 1
 
 
 def test_refresh_reports_unchanged_updated_and_removed(tmp_path, monkeypatch):
@@ -310,6 +429,44 @@ def test_group_by_warns_about_partially_stale_library(tmp_path):
     assert "1 record(s) in 'TV' lack show/season info" in result.output
     payload = json.loads(result.stdout)
     assert {r["show"] for r in payload["results"]} == {"Unwatched Show", "Watched Show"}
+
+
+def test_group_by_season_show_filter(tmp_path):
+    cache_path = seed_tv_cache(tmp_path)
+    result = runner.invoke(
+        app,
+        ["search", "-l", "TV", "--group-by", "season", "--show", "unwatched show",
+         "--format", "json", "--cache-file", str(cache_path)],
+    )
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert payload["summary"]["count"] == 2
+    assert all(r["show"] == "Unwatched Show" for r in payload["results"])
+
+
+def test_show_filter_requires_group_by_season(tmp_path):
+    cache_path = seed_tv_cache(tmp_path)
+    for extra in ([], ["--group-by", "show"]):
+        result = runner.invoke(
+            app,
+            ["search", "-l", "TV", "--show", "Unwatched Show", *extra,
+             "--cache-file", str(cache_path)],
+        )
+        assert result.exit_code != 0
+        assert "--group-by season" in result.output
+
+
+def test_show_filter_unknown_show_warns(tmp_path):
+    cache_path = seed_tv_cache(tmp_path)
+    result = runner.invoke(
+        app,
+        ["search", "-l", "TV", "--group-by", "season", "--show", "Nope",
+         "--format", "json", "--cache-file", str(cache_path)],
+    )
+    assert result.exit_code == 0, result.output
+    assert "no show named 'Nope'" in result.output
+    payload = json.loads(result.stdout)
+    assert payload["summary"]["count"] == 0
 
 
 def test_search_without_group_by_unchanged(tmp_path):

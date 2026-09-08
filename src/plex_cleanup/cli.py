@@ -110,6 +110,25 @@ def _progress() -> Progress:
     )
 
 
+def _fetch_play_counts(server, progress: Progress) -> dict[int, int]:
+    """All-accounts play counts, or empty (with a warning) if history fails.
+
+    A non-admin token only sees its own history; older servers may reject the
+    endpoint entirely. Falling back keeps plays at the owner's viewCount.
+    """
+    task = progress.add_task("Fetching watch history (all accounts)", total=None)
+    try:
+        return plex.fetch_play_counts(server)
+    except Exception as exc:
+        err_console.print(
+            f"[yellow]Warning: could not fetch the server watch history "
+            f"({exc}); play counts reflect only the token's account.[/yellow]"
+        )
+        return {}
+    finally:
+        progress.remove_task(task)
+
+
 def _scan_section(section, progress: Progress) -> list:
     listing = progress.add_task(f"Listing items in [cyan]{section.title}[/cyan]", total=None)
     items = plex.fetch_items(section)
@@ -151,6 +170,12 @@ def search(
         "Size/bitrate filters compare the group average; play filters must "
         "hold for every episode. Resolution filters are not supported.",
     ),
+    show: Optional[str] = typer.Option(
+        None,
+        "--show",
+        help="Only seasons of this show (case-insensitive exact name). "
+        "Requires --group-by season.",
+    ),
     format: OutputFormat = FORMAT_OPTION,
     output: Optional[Path] = OUTPUT_OPTION,
     url: Optional[str] = URL_OPTION,
@@ -166,6 +191,11 @@ def search(
         raise typer.BadParameter(
             "--min-resolution/--max-resolution cannot be combined with --group-by; "
             "resolution does not aggregate meaningfully."
+        )
+    if show is not None and group_by != GroupBy.season:
+        raise typer.BadParameter(
+            "--show requires --group-by season; it narrows season aggregates "
+            "to one show."
         )
 
     cache = Cache.load(cache_file or default_cache_path())
@@ -213,8 +243,10 @@ def search(
             sections.append(section)
 
         with _progress() as progress:
+            play_counts = _fetch_play_counts(srv, progress)
             for section in sections:
                 scanned = _scan_section(section, progress)
+                plex.apply_play_counts(scanned, play_counts)
                 cache.set_records(section.title, scanned)
                 # Persist after each library so an interrupted run keeps
                 # everything that finished scanning.
@@ -230,6 +262,7 @@ def search(
         max_size=_parse_size_option(max_size),
         min_resolution=min_resolution.value if min_resolution else None,
         max_resolution=max_resolution.value if max_resolution else None,
+        show=show,
     )
     if group_by is not None:
         # Only records with structured show info can be grouped. A library
@@ -260,6 +293,12 @@ def search(
                 "'plex-cleanup refresh-metadata'."
             )
             raise typer.Exit(code=1)
+        if show is not None and not any(r.show.lower() == show.lower() for r in groupable):
+            err_console.print(
+                f"[yellow]Warning: no show named {show!r} in the selected "
+                "libraries — check the spelling (matching is exact, ignoring "
+                "case).[/yellow]"
+            )
         aggs = apply_aggregate_filters(aggregate(groupable, group_by.value), filters)
         aggs.sort(key=lambda a: a.total_size_bytes, reverse=True)
         render_aggregates(aggs, group_by.value, format, output, err_console)
@@ -321,6 +360,7 @@ def refresh_metadata(
     server = _connect(url, token)
     results: list[dict] = []
     with _progress() as progress:
+        play_counts = _fetch_play_counts(server, progress)
         task = progress.add_task("Refreshing metadata", total=len(groups))
         for (library, rating_key) in groups:
             cached = item_files.get((library, rating_key), {})
@@ -331,6 +371,7 @@ def refresh_metadata(
                 results.extend({"file": f, "status": "removed"} for f in cached)
             else:
                 new_records = list(plex.records_for_item(item, library))
+                plex.apply_play_counts(new_records, play_counts)
                 cache.replace_item_records(library, rating_key, new_records)
                 new_files = set()
                 for record in new_records:

@@ -48,12 +48,25 @@ Filters (all optional): `--min-plays` / `--max-plays`, `--min-bitrate` /
 `--max-bitrate` (kbps), `--min-size` / `--max-size` (e.g. `500MB`, `1.5GB`),
 `--min-resolution` / `--max-resolution` (`sd`, `480`, `720`, `1080`, `4K`).
 
+Play counts cover **every account** on the server, not just the token's:
+scans combine the item's view count with the server-wide watch history
+(which also captures partial plays), taking the higher of the two. This
+needs an admin token; with a restricted token a warning is printed and
+counts fall back to the token's own plays. History rows are matched by what
+they name (show/season/episode, or movie title) rather than by rating key,
+so plays survive an item being deleted and re-added later. Plays older than
+the server's history retention only register if the token's account made
+them. Caches written before this existed undercount plays — run
+`refresh-metadata` once to update them.
+
 Aggregate mode: `--group-by show` or `--group-by season` returns whole TV
 shows or seasons instead of files. Play filters must hold for **every**
 episode in the group (`--max-plays 0` = nothing in the show was watched);
 size and bitrate filters compare the **group average** (per file — a
 multi-part episode counts per part); resolution filters are not supported
-with `--group-by`. Results include episode/file counts, a plays range,
+with `--group-by`. With `--group-by season`, `--show NAME` narrows the
+results to the seasons of one show (case-insensitive exact name match).
+Results include episode/file counts, a plays range,
 average size/bitrate, and total size (the sort key). Non-TV libraries are
 skipped with a warning. Caches written before this option existed lack
 show/season info — run `refresh-metadata` once for TV libraries cached
@@ -65,6 +78,9 @@ uv run plex-cleanup search -l TV --group-by show --max-plays 0
 
 # Seasons whose average episode file is over 3GB
 uv run plex-cleanup search -l TV --group-by season --min-size 3GB
+
+# Unwatched seasons of one show
+uv run plex-cleanup search -l TV --group-by season --show "The Wire" --max-plays 0
 ```
 
 Output: `--format tabular` (default), `json`, or `csv`; `--output FILE`
