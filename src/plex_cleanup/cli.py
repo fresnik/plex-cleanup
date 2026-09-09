@@ -110,7 +110,7 @@ def _progress() -> Progress:
     )
 
 
-def _fetch_play_counts(server, progress: Progress) -> dict[int, int]:
+def _fetch_play_counts(server, progress: Progress) -> dict[tuple, int]:
     """All-accounts play counts, or empty (with a warning) if history fails.
 
     A non-admin token only sees its own history; older servers may reject the
@@ -293,7 +293,9 @@ def search(
                 "'plex-cleanup refresh-metadata'."
             )
             raise typer.Exit(code=1)
-        if show is not None and not any(r.show.lower() == show.lower() for r in groupable):
+        if show is not None and not any(
+            r.show is not None and r.show.lower() == show.lower() for r in groupable
+        ):
             err_console.print(
                 f"[yellow]Warning: no show named {show!r} in the selected "
                 "libraries — check the spelling (matching is exact, ignoring "

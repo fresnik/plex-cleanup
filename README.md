@@ -105,5 +105,19 @@ uv run plex-cleanup refresh-metadata "/media/movies/example.mkv"
 ## Development
 
 ```sh
-uv run pytest
+uv run pytest        # tests
+uv run pyrefly check # type check
 ```
+
+### Git hooks
+
+`hooks/pre-commit` runs the type check and aborts the commit if it reports an
+error. Hooks are not enabled automatically by a clone, so enable them once per
+working copy:
+
+```sh
+git config core.hooksPath hooks
+```
+
+Warnings are reported but do not block. To bypass the hook for a single commit,
+use `git commit --no-verify`.

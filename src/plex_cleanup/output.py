@@ -72,10 +72,11 @@ def _print_table(table: Table, summary: str, output: Path | None, console: Conso
         out_console.print(table)
         out_console.print(f"[bold]{summary}[/bold]")
     else:
-        file_console = Console(file=io.StringIO(), width=200)
+        buffer = io.StringIO()
+        file_console = Console(file=buffer, width=200)
         file_console.print(table)
         file_console.print(summary)
-        output.write_text(file_console.file.getvalue(), encoding="utf-8")
+        output.write_text(buffer.getvalue(), encoding="utf-8")
         console.print(f"[dim]Wrote output to {output}[/dim]")
 
 

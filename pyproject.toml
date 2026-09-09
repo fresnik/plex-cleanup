@@ -15,7 +15,10 @@ dependencies = [
 plex-cleanup = "plex_cleanup.cli:app"
 
 [dependency-groups]
-dev = ["pytest>=8.0"]
+dev = [
+    "pyrefly>=1.2.0",
+    "pytest>=8.0",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -23,3 +26,8 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/plex_cleanup"]
+
+[tool.pyrefly]
+project-includes = ["src", "tests"]
+search-path = ["src", "."]
+python-version = "3.10"

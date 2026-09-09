@@ -1,0 +1,41 @@
+#!/bin/sh
+# Block commits that fail the pyrefly type check.
+#
+# Enabled per clone with:  git config core.hooksPath hooks
+# Bypass a single commit with:  git commit --no-verify
+#
+# Caveat: pyrefly checks the working tree, not the staged snapshot. If you
+# stage only part of your changes, the result reflects what is on disk rather
+# than what is being committed.
+
+set -eu
+
+# Git may invoke hooks with a minimal PATH (GUI clients do not read a shell
+# profile), so look in the usual install locations before giving up.
+if ! command -v uv >/dev/null 2>&1; then
+    for dir in /opt/homebrew/bin /usr/local/bin "$HOME/.local/bin" "$HOME/.cargo/bin"; do
+        if [ -x "$dir/uv" ]; then
+            PATH="$dir:$PATH"
+            export PATH
+            break
+        fi
+    done
+fi
+
+if ! command -v uv >/dev/null 2>&1; then
+    echo "pre-commit: uv not found on PATH; cannot run the pyrefly check." >&2
+    echo "pre-commit: install uv, or bypass with 'git commit --no-verify'." >&2
+    exit 1
+fi
+
+echo "pre-commit: running pyrefly..."
+
+# --frozen so a commit never rewrites uv.lock as a side effect.
+if uv run --frozen pyrefly check; then
+    exit 0
+fi
+
+echo >&2
+echo "pre-commit: pyrefly failed; commit aborted." >&2
+echo "pre-commit: fix the errors above, or bypass with 'git commit --no-verify'." >&2
+exit 1

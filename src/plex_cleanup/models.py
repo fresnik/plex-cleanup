@@ -16,7 +16,7 @@ def resolution_ordinal(value: str | None) -> int | None:
     """Map a Plex videoResolution string to a comparable ordinal."""
     if value is None:
         return None
-    return _RESOLUTION_ORDER.get(str(value).strip().lower())
+    return _RESOLUTION_ORDER.get(value.strip().lower())
 
 
 @dataclass

@@ -20,10 +20,11 @@ class FakeMedia:
 class FakeEpisode:
     type = "episode"
 
-    def __init__(self, rating_key, show, season, episode_title, file):
+    def __init__(self, rating_key, show, season, episode_title, file, index=None):
         self.ratingKey = rating_key
         self.grandparentTitle = show
         self.parentIndex = season
+        self.index = index
         self.seasonEpisode = f"s{season:02d}e01"
         self.title = episode_title
         self.viewCount = 0
@@ -145,8 +146,7 @@ def test_apply_play_counts_movies_by_title_and_key_fallback():
 
 
 def test_episode_records_carry_episode_number():
-    item = FakeEpisode(10, "Example Show", 2, "Pilot", "/tv/show/s02e01.mkv")
-    item.index = "5"
+    item = FakeEpisode(10, "Example Show", 2, "Pilot", "/tv/show/s02e01.mkv", index="5")
     (record,) = list(records_for_item(item, "TV"))
     assert record.episode == 5
 

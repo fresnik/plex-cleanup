@@ -53,7 +53,9 @@ def test_size_range():
 
 def test_resolution_ladder_ordering():
     order = [resolution_ordinal(v) for v in ["sd", "480", "576", "720", "1080", "4k"]]
-    assert order == sorted(order)
+    assert None not in order
+    ladder = [o for o in order if o is not None]
+    assert ladder == sorted(ladder)
     assert resolution_ordinal("4K") == resolution_ordinal("4k")
     assert resolution_ordinal("weird") is None
 
@@ -69,6 +71,14 @@ def test_resolution_range():
     # 576 sits between 480 and 720
     assert matches(make_record(resolution="576"), SearchFilters(max_resolution="720"))
     assert not matches(make_record(resolution="576"), SearchFilters(min_resolution="720"))
+
+
+def test_unknown_resolution_filter_raises():
+    record = make_record(resolution="1080")
+    with pytest.raises(ValueError, match="min_resolution"):
+        matches(record, SearchFilters(min_resolution="hd"))
+    with pytest.raises(ValueError, match="max_resolution"):
+        matches(record, SearchFilters(max_resolution="hd"))
 
 
 def test_apply_filters():
@@ -98,7 +108,7 @@ def test_aggregate_by_season_splits_seasons():
         make_episode(rating_key=2, season=2, file="/tv/a/s02e01.mkv"),
     ]
     aggs = aggregate(records, "season")
-    assert sorted(a.season for a in aggs) == [1, 2]
+    assert {a.season for a in aggs} == {1, 2}
     assert all(a.show == "Example Show" and a.episodes == 1 for a in aggs)
 
 

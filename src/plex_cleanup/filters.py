@@ -26,7 +26,8 @@ def matches(record: MediaRecord, filters: SearchFilters) -> bool:
 
     A record with an unknown value (None) is excluded when a filter on that
     field is active, since the constraint cannot be verified.
-    The show filter is not supported for file records and raises ValueError.
+    The show filter is not supported for file records and raises ValueError,
+    as does a min/max resolution outside the known resolution ladder.
     """
     if filters.show is not None:
         raise ValueError("the show filter is not supported for file records")
@@ -58,10 +59,14 @@ def matches(record: MediaRecord, filters: SearchFilters) -> bool:
     ordinal = resolution_ordinal(record.resolution)
     if filters.min_resolution is not None:
         minimum = resolution_ordinal(filters.min_resolution)
+        if minimum is None:
+            raise ValueError(f"unknown min_resolution: {filters.min_resolution!r}")
         if ordinal is None or ordinal < minimum:
             return False
     if filters.max_resolution is not None:
         maximum = resolution_ordinal(filters.max_resolution)
+        if maximum is None:
+            raise ValueError(f"unknown max_resolution: {filters.max_resolution!r}")
         if ordinal is None or ordinal > maximum:
             return False
 
